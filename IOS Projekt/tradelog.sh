@@ -42,7 +42,11 @@ BEFORE_TIME="9999-12-31 23:59:59"
 
 read_input()
 {
-  cat $LOG_FILES
+  if [ "$GZ_LOG_FILES" = "" ]; then
+    cat $LOG_FILES
+  else
+    gzip -d -c $GZ_LOG_FILES | cat $LOG_FILES -
+  fi
 }
 
 tick_filter()
@@ -72,20 +76,72 @@ profit()
 
 ticker_value()
 {
-  awk -F ';' '{tickrs[$2]+=($4 * $6)} END {for (i in tickrs) {printf "%.2f;%s\n",tickrs[i],i}}'
+  awk -F ';' '{
+    if ($3 == "buy") {tickrs[$2]+=$6} else {tickrs[$2]-=$6};
+    tickrs_price[$2]=$4;
+  }
+  END { for (i in tickrs) {printf "%.2f;%s\n",tickrs[i]*tickrs_price[i],i}}'
 }
 
 pos()
 {
-  read_filtered | sed 's/sell;/sell;-/' | ticker_value | sort -n -r | awk -F ';' '{printf "%-10s:%13.2f\n",$2,$1}'
-  #TODO zarovnání čísel lmao
+  HIGHEST_TICKER=$(read_filtered | ticker_value | cut -d ';' -f1 -s \
+  | awk '{printf "%i\n",length($0)}' | sort -g | tail -n 1)
+
+  read_filtered | sed 's/sell;/sell;-/' | ticker_value | sort -n -r \
+  | awk -F ';' -v highest_ticker="$HIGHEST_TICKER" '{printf "%-10s: %*.2f\n",$2,highest_ticker,$1}'
 }
 
 last_price()
 {
+  HIGHEST_TICKER=$(read_filtered | sort \
+  | awk -F ';' '{tickrs[$2]=$4} END {for (i in tickrs) {printf "%.2f;%s\n",tickrs[i],i}}' \
+  | cut -d ';' -f1 -s | awk '{printf "%i\n",length($0)}' | sort -g | tail -n 1)
+
   read_filtered | sort | awk -F ';' '{tickrs[$2]=$4} END {for (i in tickrs) {printf "%.2f;%s\n",tickrs[i],i}}' \
-  | awk -F ';' '{printf "%-10s:%13.2f\n",$2,$1}' | sort
-  #TODO zarovnání čísel lmao
+  | awk -F ';' -v highest_ticker="$HIGHEST_TICKER" '{printf "%-10s: %*.2f\n",$2,highest_ticker,$1}' | sort
+}
+
+ord_print()
+{
+  awk -F ';' -v width=$WIDTH -v highest_ticker="$HIGHEST_TICKER" '{
+    printf "%-10s: ", $1;
+    for (i = 1; i <= ($2/(highest_ticker/width)); ++i) printf "#";
+    printf "\n";
+  };'
+}
+
+hist_ord()
+{
+  HIGHEST_TICKER=$(read_filtered | awk -F ';' '{tickrs[$2]+= 1}
+  END {for (i in tickrs) {printf "%.0f;%s\n",tickrs[i],i}}' | cut -d ';' -f1 -s | sort -n | tail -n 1)
+
+  if [ "$WIDTH" = "" ]; then
+    WIDTH=$HIGHEST_TICKER
+  fi
+
+read_filtered | awk -F ';' '{tickrs[$2]+= 1} END {for (i in tickrs) {printf "%s;%.0f\n",i,tickrs[i]}}' | ord_print | sort
+}
+
+graph_print()
+{
+  awk -F ';' -v width="$WIDTH" -v highest_ticker="$HIGHEST_TICKER" '{
+    printf "%-10s: ", $2;
+    if ($1 < 0) { for (i=1; i <= -($1/(highest_ticker/width)); i++) printf "!";};
+    if ($1 > 0) { for (i=1; i <= ($1/(highest_ticker/width)); i++) printf "#";};
+    printf "\n";
+  }'
+}
+
+graph_pos()
+{
+  HIGHEST_TICKER=$(read_filtered | ticker_value | awk '{if ($1 < 0) {printf "%.2f\n",-$1} else {printf "%.2f\n", $1}}' | sort -n | tail -n 1)
+
+  if [ "$WIDTH" = "" ]; then
+    WIDTH=1000
+  fi
+
+  read_filtered | ticker_value | graph_print | sort
 }
 
 while [ "$#" -gt 0 ]; do
