@@ -37,9 +37,6 @@ TICKERS=""
 AFTER_TIME="0000-00-00 00:00:00"
 BEFORE_TIME="9999-12-31 23:59:59"
 
-#READ_INPUT="gzip -d -c $GZ_LOG_FILES | cat $LOG_FILES - | sort "
-#TODO udělat GZIP
-
 read_input()
 {
   if [ "$GZ_LOG_FILES" = "" ]; then
@@ -85,10 +82,10 @@ ticker_value()
 
 pos()
 {
-  HIGHEST_TICKER=$(read_filtered | ticker_value | cut -d ';' -f1 -s \
+  HIGHEST_TICKER=$(read_filtered | ticker_value  | cut -d ';' -f1 -s \
   | awk '{printf "%i\n",length($0)}' | sort -g | tail -n 1)
 
-  read_filtered | sed 's/sell;/sell;-/' | ticker_value | sort -n -r \
+  read_filtered | ticker_value | sort -n -r \
   | awk -F ';' -v highest_ticker="$HIGHEST_TICKER" '{printf "%-10s: %*.2f\n",$2,highest_ticker,$1}'
 }
 
